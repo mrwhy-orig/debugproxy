@@ -120,16 +120,11 @@ class DBGp_Mapper {
             if(self::$ftpServer !== ''){
                 
                 $proxyCodeCachePath = self::$localBaseURI . '/Data/Temporary/' . self::$flowContext . '/Cache/Code/Flow_Object_Classes/';
-                
-                echo "\n\n FTPServer Mode: ON";
                 $connectionID = ftp_connect(self::$ftpServer, self::$ftpPort, self::$ftpTimeout);
-                echo "\n ConnectionID " . $connectionID;
-                echo "\n FTP Login Params :" . self::$ftpUser . " " . self::$ftpPass;
                 ftp_login($connectionID, self::$ftpUser, self::$ftpPass);
                 $onServer = ftp_nlist($connectionID, $proxyCodeCachePath);
-                echo $proxyCodeCacheFileName;
                 if(in_array($proxyCodeCacheFileName, $onServer)){
-                    echo "true";
+
                     return true;
                 } else {
                     return false;
