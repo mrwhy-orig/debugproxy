@@ -35,6 +35,7 @@
 
   copyright (c) 2007 Ivan Montes <http://blog.netxus.es>
   adjustments 2012 by Sebastian Kurfürst <http://sandstorm-media.de>
+  add remote lan support 2014 by Björn Haverland <http://b-have.de>
  */
 
 class DBGp_Mapper {
@@ -44,7 +45,13 @@ class DBGp_Mapper {
 	static $dbgSocket = null;
 	static $ideSocket = null;
 	static $mappings = array();
-
+        static $localBaseURI = null;
+        static $ftpServer = '';
+        static $ftpPort = '21';
+        static $ftpTimeout = '90';
+        static $ftpUser = '';
+        static $ftpPass = '';
+ 
 	static public $debug = FALSE;
 
 	static public $flowContext = '';
@@ -101,6 +108,37 @@ class DBGp_Mapper {
 		$className = str_replace(array('.', '/'), '\\', $matches[3]);
 		return array($flowBaseUri, $className);
 	}
+        
+        static protected function checkIfFileExists($flowBaseUri, $className){
+            $codeCacheFileName = $flowBaseUri . '/Data/Temporary/' . self::$flowContext . '/Cache/Code/Flow_Object_Classes/' . str_replace('\\', '_', $className) . '.php';
+            $proxyCodeCacheFileName = self::$localBaseURI . '/Data/Temporary/' . self::$flowContext . '/Cache/Code/Flow_Object_Classes/' . str_replace('\\', '_', $className) . '.php';
+            
+            if(file_exists($proxyCodeCacheFileName) || file_exists($codeCacheFileName) ){
+                return TRUE;
+            }
+            
+            if(self::$ftpServer !== ''){
+                
+                $proxyCodeCachePath = self::$localBaseURI . '/Data/Temporary/' . self::$flowContext . '/Cache/Code/Flow_Object_Classes/';
+                
+                echo "\n\n FTPServer Mode: ON";
+                $connectionID = ftp_connect(self::$ftpServer, self::$ftpPort, self::$ftpTimeout);
+                echo "\n ConnectionID " . $connectionID;
+                echo "\n FTP Login Params :" . self::$ftpUser . " " . self::$ftpPass;
+                ftp_login($connectionID, self::$ftpUser, self::$ftpPass);
+                $onServer = ftp_nlist($connectionID, $proxyCodeCachePath);
+                echo $proxyCodeCacheFileName;
+                if(in_array($proxyCodeCacheFileName, $onServer)){
+                    echo "true";
+                    return true;
+                } else {
+                    return false;
+                }
+            }
+            
+            return false;
+            
+        }
 
 	static function map($path) {
 		if (strpos($path, '/Packages/') !== FALSE) {
@@ -110,8 +148,9 @@ class DBGp_Mapper {
 
 
 			$codeCacheFileName = $flowBaseUri . '/Data/Temporary/' . self::$flowContext . '/Cache/Code/Flow_Object_Classes/' . str_replace('\\', '_', $className) . '.php';
+                        $proxyCodeCacheFileName = self::$localBaseURI . '/Data/Temporary/' . self::$flowContext . '/Cache/Code/Flow_Object_Classes/' . str_replace('\\', '_', $className) . '.php';
 
-			if (strpos('@Flow\\', file_get_contents($path)) !== FALSE || file_exists($codeCacheFileName)) {
+                        if (strpos('@Flow\\', file_get_contents($path)) !== FALSE || self::checkIfFileExists($flowBaseUri, $className)) {
 				self::$mappings[$codeCacheFileName] = $path;
 				return $codeCacheFileName;
 			}
@@ -315,7 +354,7 @@ class DBGp_Mapper {
 		global $argv;
 
 		$help = array(
-			$argv[0] . " - DBGp Path Mapper <http://blog.netxus.es>, adjusted by Sebastian Kurfürst for Flow (http://sandstorm-media.de)",
+			$argv[0] . " - DBGp Path Mapper <http://blog.netxus.es>, adjusted by Sebastian Kurfürst for Flow (http://sandstorm-media.de), adjusted by Björn Haverland (http://b-have.de) for remote LAN sever usage (file access to source required)",
 			"",
 			"If you set a breakpoint in one of Flow-managed PHP classes, this proxy",
 			"will instead set the breakpoint in the proxy class, if that makes sense.",
@@ -341,6 +380,8 @@ class DBGp_Mapper {
 			"\t-c Development",
 			"\t             The context to run as",
 			"\t-d           enable debugging mode",
+                        "\t-b FlowUri   specify local flow uri e.g V:\\Flow (default: '') also use this for FTP",
+                        "\t-r FTP-Files the FTP Access 'server;user;pass[;port;Timeout]' ",
 			"",
 			"",
 			"Note: We use the following heuristic to determine whether the breakpoints",
@@ -357,14 +398,14 @@ class DBGp_Mapper {
 
 	static function processArguments() {
 		if (function_exists('getopt')) {
-			$r = getopt('dhVfi:p:I:P:c:');
+			$r = getopt('dhVfi:p:I:P:c:b:r:');
 		} else {
 			$args = implode(' ', $GLOBALS['argv']);
 			$r = self::parseCommandArguments($args);
 		}
 
 		if (isset($r['V'])) {
-			echo "DBGp Path Mapper v2.0 - Flow version of 09.08.2012\n";
+			echo "DBGp Path Mapper v2.1 - Flow version of 09.08.2012\n";
 			exit();
 		} else if (isset($r['h'])) {
 			self::help();
@@ -378,7 +419,9 @@ class DBGp_Mapper {
 			'P' => isset($r['P']) ? $r['P'] : '9000',
 			'f' => isset($r['f']) ? true : false,
 			'c' => isset($r['c']) ? $r['c'] : '',
-			'd' => isset($r['d']) ? true : false
+			'd' => isset($r['d']) ? true : false,
+                        'b' => isset($r['b']) ? $r['b'] : '',
+                        'r' => isset($r['r']) ? $r['r'] : ''
 		);
 	}
 
@@ -405,6 +448,19 @@ class DBGp_Mapper {
 		fclose(STDOUT);
 		fclose(STDERR);
 	}
+        
+        static function setFTPParams($params){
+            $params = explode(";", $params);
+            self::$ftpServer = $params[0];
+            self::$ftpUser = $params[1];
+            self::$ftpPass = $params[2];
+            if(array_key_exists(3, $params)){
+                self::$ftpPort = $params[3];
+                if(array_key_exists(4, $params)){
+                    self::$ftpTimeout = $params[4];
+                }
+            }
+        }
 
 }
 
@@ -427,5 +483,9 @@ if (!$args['f']) {
 }
 DBGp_Mapper::$debug = $args['d'];
 DBGp_Mapper::$flowContext = $args['c'];
+DBGp_Mapper::$localBaseURI = $args['b'];
+if($args['r'] !== ''){
+    DBGp_Mapper::setFTPParams($args['r']);
+}
 # run the process to listen for connections
 DBGp_Mapper::run($args['i'], $args['p'], $args['I'], $args['P']);
